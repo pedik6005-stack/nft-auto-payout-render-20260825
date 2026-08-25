@@ -1,0 +1,49 @@
+{
+  "premium_backdrops": {
+    "Black": 88,
+    "Onyx Black": 100
+  },
+  "color_groups": {
+    "Black": "black",
+    "Onyx Black": "black",
+    "Midnight": "black",
+    "Obsidian": "black",
+    "Graphite": "dark",
+    "Dark Gray": "dark",
+    "White": "white",
+    "Snow": "white",
+    "Silver": "white",
+    "Navy": "blue",
+    "Blue": "blue"
+  },
+  "combinations": [
+    {
+      "model": "Black",
+      "backdrop": "Onyx Black",
+      "score": 100,
+      "monochrome": true,
+      "note": "Сильная чёрная комбинация"
+    },
+    {
+      "model": "Black",
+      "backdrop": "Black",
+      "score": 96,
+      "monochrome": true,
+      "note": "Чистый monochrome"
+    },
+    {
+      "model": "Graphite",
+      "backdrop": "Black",
+      "score": 88,
+      "monochrome": true,
+      "note": "Тёмная модель хорошо сливается с фоном"
+    },
+    {
+      "model": "White",
+      "backdrop": "Snow",
+      "score": 90,
+      "monochrome": true,
+      "note": "Светлый monochrome"
+    }
+  ]
+}
