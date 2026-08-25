@@ -5,3 +5,4 @@ curl-cffi>=0.10,<1
 Pyrogram>=2.0.106,<3
 Telethon>=1.42,<2
 tonutils>=2.0,<3
+aiohttp>=3.10,<4

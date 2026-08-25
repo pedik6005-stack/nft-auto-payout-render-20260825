@@ -1,9 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: nft-auto-payout-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
     autoDeploy: true
+    healthCheckPath: /healthz
     envVars:
       - key: BOT_TOKEN
         sync: false

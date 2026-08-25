@@ -20,4 +20,6 @@ COPY scripts /app/scripts
 
 RUN mkdir -p /app/data /app/logs /app/data/sessions
 
-CMD ["python", "-m", "app.main"]
+EXPOSE 10000
+CMD ["python", "-m", "app.render_web"]
+
