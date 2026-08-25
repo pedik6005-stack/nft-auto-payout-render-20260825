@@ -1,0 +1,15 @@
+# local secrets and runtime state
+.env
+*.session
+*.session-journal
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.pid
+data/*.log
+data/ton_mnemonic.txt
+data/sessions/
+logs/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/

@@ -1,0 +1,7 @@
+aiogram>=3.17,<4
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+curl-cffi>=0.10,<1
+Pyrogram>=2.0.106,<3
+Telethon>=1.42,<2
+tonutils>=2.0,<3

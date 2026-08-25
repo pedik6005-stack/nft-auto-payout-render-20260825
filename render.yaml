@@ -1,0 +1,29 @@
+services:
+  - type: worker
+    name: nft-auto-payout-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: DB_PATH
+        value: /app/data/bot.sqlite3
+      - key: DATA_DIR
+        value: /app/data
+      - key: LOG_DIR
+        value: /app/logs
+      - key: PROVIDER
+        value: mrkt
+      - key: PAYOUT_MODE
+        value: real
+      - key: TON_MNEMONIC
+        sync: false
+      - key: TON_API_KEY
+        sync: false
+      - key: PROFIT_GROUP_ID
+        sync: false
+      - key: MRKT_SESSION_STRING
+        sync: false
