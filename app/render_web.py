@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 
@@ -28,6 +29,25 @@ from app.services.visual import VisualEngine
 logger = logging.getLogger(__name__)
 
 
+def restore_session_from_env() -> None:
+    value = os.getenv("MRKT_SESSION_B64")
+    if not value:
+        secret_b64 = "/etc/secrets/mrkt_session.b64"
+        if os.path.exists(secret_b64):
+            with open(secret_b64, "r", encoding="ascii") as fh:
+                value = fh.read().strip()
+    if not value:
+        return
+    session_dir = os.getenv("MRKT_SESSION_DIR", "/app/data/sessions")
+    session_name = os.getenv("MRKT_SESSION_NAME", "mrkt_session")
+    path = os.path.join(session_dir, f"{session_name}.session")
+    os.makedirs(session_dir, exist_ok=True)
+    raw = base64.b64decode(value.encode("ascii"))
+    with open(path, "wb") as fh:
+        fh.write(raw)
+    logger.info("Restored Telegram account session to %s", path)
+
+
 def _public_url() -> str:
     explicit = os.getenv("WEBHOOK_URL") or os.getenv("RENDER_EXTERNAL_URL")
     if explicit:
@@ -42,6 +62,7 @@ async def health(_: web.Request) -> web.Response:
 async def build_app() -> web.Application:
     settings = load_settings()
     setup_logging(settings.log_level)
+    restore_session_from_env()
     logger.info("Starting payout portal webhooks v%s", __version__)
 
     db = Database(settings.database_path)
@@ -127,3 +148,4 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+
