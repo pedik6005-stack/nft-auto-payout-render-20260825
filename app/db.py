@@ -578,6 +578,39 @@ class Database:
                 return None
             return conn.execute("SELECT * FROM payout_requests WHERE id=?", (request_id,)).fetchone()
 
+
+    async def finish_payout_request(
+        self, request_id: int, status: str, tx_hash: str | None, raw_output: str
+    ) -> sqlite3.Row | None:
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._finish_payout_request_sync, request_id, status, tx_hash, raw_output
+            )
+
+    def _finish_payout_request_sync(
+        self, request_id: int, status: str, tx_hash: str | None, raw_output: str
+    ) -> sqlite3.Row | None:
+        if status not in {"sent", "failed"}:
+            status = "failed"
+        now = _now()
+        with self._connect() as conn:
+            request = conn.execute("SELECT * FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+            if request is None:
+                return None
+            payout_record_id = request["payout_record_id"]
+            if payout_record_id is not None:
+                conn.execute(
+                    """UPDATE payout_records SET status=?, tx_hash=?, raw_output=?
+                       WHERE id=?""",
+                    (status, tx_hash, (raw_output or "")[:4000], payout_record_id),
+                )
+            conn.execute(
+                """UPDATE payout_requests SET status=?, updated_at=?
+                   WHERE id=? AND status IN ('approved','ready_for_approval')""",
+                (status, now, request_id),
+            )
+            return conn.execute("SELECT * FROM payout_requests WHERE id=?", (request_id,)).fetchone()
+
     async def reject_payout_request(self, request_id: int, admin_id: int) -> sqlite3.Row | None:
         async with self._lock:
             return await asyncio.to_thread(self._reject_payout_request_sync, request_id, admin_id)
