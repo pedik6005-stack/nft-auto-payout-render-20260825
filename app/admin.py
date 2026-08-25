@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import html
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import quote
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
@@ -22,7 +22,6 @@ from app.keyboards import (
     group_picker_keyboard,
     payout_request_list_keyboard,
     payout_request_review_keyboard,
-    wallet_transfer_keyboard,
 )
 from app.services.monitor import MarketMonitor
 from app.services.payouts import PayoutService
@@ -42,7 +41,7 @@ def _is_admin(user_id: int, settings: Settings) -> bool:
 async def _status_text(settings: Settings, db: Database) -> str:
     stats = await db.portal_admin_stats()
     session_ready = any(Path(settings.mrkt_session_dir).glob(settings.mrkt_session_name + "*.session"))
-    wallet_ready = Path(settings.ton_mnemonic_file or "data/ton_mnemonic.txt").exists()
+    wallet_ready = bool(os.getenv("TON_MNEMONIC")) or Path(settings.ton_mnemonic_file or "data/ton_mnemonic.txt").exists()
     group_ready = bool(await _effective_setting(db, "profit_group_chat_id", settings.profit_group_chat_id))
     return (
         "🛠 <b>АДМИН-ПАНЕЛЬ ВЫПЛАТ</b>\n\n"
@@ -198,7 +197,12 @@ async def admin_payout_request(callback: CallbackQuery, settings: Settings, db: 
 
 
 @router.callback_query(F.data.startswith("admin:payout_approve:"))
-async def admin_payout_approve(callback: CallbackQuery, settings: Settings, db: Database) -> None:
+async def admin_payout_approve(
+    callback: CallbackQuery,
+    settings: Settings,
+    db: Database,
+    payout_service: PayoutService,
+) -> None:
     if not _is_admin(callback.from_user.id, settings):
         await callback.answer("Нет доступа", show_alert=True)
         return
@@ -208,33 +212,68 @@ async def admin_payout_approve(callback: CallbackQuery, settings: Settings, db: 
         await callback.answer("Некорректный ID", show_alert=True)
         return
     bot_info = await callback.bot.get_me()
+    bot_name = "@" + (bot_info.username or str(bot_info.id))
     mentor = await db.get_app_setting("default_mentor")
-    row = await db.approve_payout_request(
-        request_id, callback.from_user.id, "@" + (bot_info.username or str(bot_info.id)), mentor
-    )
+    row = await db.approve_payout_request(request_id, callback.from_user.id, bot_name, mentor)
     if row is None:
         await callback.answer("Заявка уже обработана", show_alert=True)
         return
-    amount_nano = int(round(float(row["amount_ton"]) * 1_000_000_000))
-    comment = quote(f"payout request {request_id}", safe="")
-    transfer_url = (
-        f"https://app.tonkeeper.com/transfer/{row['wallet']}"
-        f"?amount={amount_nano}&text={comment}"
-    )
-    await callback.answer("Заявка одобрена")
+
+    await callback.answer("Заявка одобрена, отправляю перевод")
     await callback.message.edit_text(
-        _request_text(row)
-        + "\n\n✅ Заявка одобрена. Проверь адрес и сумму в кошельке перед подтверждением.",
-        reply_markup=wallet_transfer_keyboard(transfer_url),
+        _request_text(row) + "\n\n⏳ Заявка одобрена. Бот отправляет TON автоматически...",
+        reply_markup=None,
     )
-    try:
-        await callback.bot.send_message(
-            int(row["user_id"]),
-            f"✅ Заявка <code>#{request_id}</code> одобрена администратором. "
-            "Перевод подготовлен к подтверждению в кошельке.",
+
+    amount_ton = float(row["amount_ton"] or 0)
+    comment = f"payout request {request_id}"
+    result = await payout_service.send(str(row["wallet"]), amount_ton, comment)
+    final_status = "sent" if result.status in {"sent", "dry_run"} else "failed"
+    row = await db.finish_payout_request(
+        request_id,
+        final_status,
+        result.tx_hash,
+        result.raw_output,
+    ) or row
+
+    if final_status == "sent":
+        tx_line = f"\nTX: <code>{html.escape(result.tx_hash)}</code>" if result.tx_hash else ""
+        await callback.message.edit_text(
+            _request_text(row)
+            + f"\n\n✅ Одобрено и автоматически отправлено: <b>{amount_ton:g} TON</b>{tx_line}",
+            reply_markup=payout_request_review_keyboard(request_id, False),
         )
-    except Exception:
-        pass
+        try:
+            await callback.bot.send_message(
+                int(row["user_id"]),
+                f"✅ Заявка <code>#{request_id}</code> одобрена. "
+                f"Выплата <b>{amount_ton:g} TON</b> отправлена автоматически.{tx_line}",
+            )
+        except Exception:
+            pass
+        chat_id_raw = await _effective_setting(db, "profit_group_chat_id", settings.profit_group_chat_id)
+        if chat_id_raw:
+            try:
+                await callback.bot.send_message(
+                    int(chat_id_raw),
+                    _format_profit_message(str(row["worker"]), bot_name, f"{amount_ton:g} TON", mentor),
+                )
+            except Exception:
+                pass
+    else:
+        await callback.message.edit_text(
+            _request_text(row)
+            + "\n\n❌ Заявка одобрена, но автоотправка не прошла. "
+            f"Причина: <code>{html.escape(result.raw_output[:900] or result.status)}</code>",
+            reply_markup=payout_request_review_keyboard(request_id, False),
+        )
+        try:
+            await callback.bot.send_message(
+                int(row["user_id"]),
+                f"⚠️ Заявка <code>#{request_id}</code> одобрена, но выплата пока не отправлена.",
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("admin:payout_reject:"))
@@ -340,7 +379,7 @@ async def admin_service_check(callback: CallbackQuery, settings: Settings, db: D
         await callback.answer("Нет доступа", show_alert=True)
         return
     session_ready = any(Path(settings.mrkt_session_dir).glob(settings.mrkt_session_name + "*.session"))
-    wallet_ready = Path(settings.ton_mnemonic_file or "data/ton_mnemonic.txt").exists()
+    wallet_ready = bool(os.getenv("TON_MNEMONIC")) or Path(settings.ton_mnemonic_file or "data/ton_mnemonic.txt").exists()
     group_id = await _effective_setting(db, "profit_group_chat_id", settings.profit_group_chat_id)
     public_wallet = await _effective_setting(db, "payout_wallet", settings.payout_wallet)
     await callback.answer("Проверка завершена")
